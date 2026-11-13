@@ -10,7 +10,7 @@ import hashlib, json, os, shutil, subprocess, sys, tempfile, time
 
 HERE = os.path.dirname(os.path.abspath(sys.executable if getattr(sys, "frozen", False) else __file__))
 BASE = getattr(sys, "_MEIPASS", HERE)
-PAYLOAD = os.path.join(BASE, "payload")
+PAYLOAD = os.path.join(HERE if os.path.isdir(os.path.join(HERE, "payload")) else BASE, "payload")
 for _d in (os.path.join(BASE, "vendor"), os.path.join(HERE, "vendor")):
     if os.path.isdir(_d) and _d not in sys.path: sys.path.insert(0, _d)
 BAK = ".zhtw_orig"; TMP = ".zhtw_tmp"

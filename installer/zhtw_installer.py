@@ -10,10 +10,10 @@ Usage:
 """
 import argparse, hashlib, json, os, re, shutil, sys, time, zlib
 
-VERSION = "Beta 0.1"
+VERSION = "Beta 0.2"
 APP = "MGS Peace Walker 繁體中文化"
 HERE = os.path.dirname(os.path.abspath(sys.executable if getattr(sys, "frozen", False) else __file__))
-PAYLOAD = os.path.join(getattr(sys, "_MEIPASS", HERE), "payload")
+PAYLOAD = os.path.join(HERE if os.path.isdir(os.path.join(HERE, "payload")) else getattr(sys, "_MEIPASS", HERE), "payload")   # next to the program (exe or script)
 MANIFEST_NAME = "zhtw_manifest.json"       # written into the game's mgspw folder
 JP_MANIFEST = "jppack_manifest.json"       # what this installer copied from the Japanese pack (for clean removal)
 JP_BAK = ".jppack_orig"
@@ -22,15 +22,15 @@ BAK = ".zhtw_orig"; TMP = ".zhtw_tmp"
 IS_LINUX = sys.platform.startswith("linux")
 
 DISCLAIMER = [
-    "本漢化包為非官方的玩家自製作品，與 Konami 及任何版權方無關。",
-    "本漢化包的翻譯、程式與文件由 AI（Anthropic 的 Claude）協助製作，並經製作者逐步檢視與修正；仍可能有誤譯、不通順、用詞不一致或缺字漏字，歡迎回報。",
-    "本漢化包不含遊戲本體，也不含日文語言包；使用者須自行擁有正版遊戲，日文語言包須自行取得，本程式不提供來源。",
+    "本繁中化包為非官方的玩家自製作品，與 Konami 及任何版權方無關。",
+    "本繁中化包的翻譯、程式與文件由 AI（Anthropic 的 Claude）協助製作，並經製作者逐步檢視與修正；仍可能有誤譯、不通順、用詞不一致或缺字漏字，歡迎回報。",
+    "本繁中化包只適用於日文版（以日文版為基礎，需搭配日文語言包）；英文版的繁體中文模組也將會製作。本繁中化包不含遊戲本體，也不含日文語言包；使用者須自行擁有正版遊戲，日文語言包須自行取得，本程式不提供來源。",
     "安裝前請自行備份存檔。本程式會備份被取代的檔案，但製作者對任何資料損失、遊戲無法執行或其他後果不負責任。",
     "禁止商用，禁止轉售。",
     "遊戲內容與商標的著作權屬於原權利人。",
-    "請自行確認所在地區的法律是否允許使用本漢化包。",
+    "請自行確認所在地區的法律是否允許使用本繁中化包。",
     "目前為測試階段，翻譯可能不完整，或有缺字、漏字，歡迎回報；回報請至 GitHub Issues，並附上版本號。"
-    "不想繼續使用時，可重新執行本安裝程式選擇「移除漢化包」，會還原原本的檔案。收到回報後會修正並釋出新版本。",
+    "不想繼續使用時，可重新執行本安裝程式選擇「移除繁中化包」，會還原原本的檔案。收到回報後會修正並釋出新版本。",
 ]
 DISCLAIMER_STEAMOS = ("製作者沒有 SteamOS 設備，SteamOS 版安裝程式只是順便製作，未經實機測試；"
                       "若發現重大執行瑕疵，將中止 SteamOS 版安裝程式的更新。回報時請註明設備型號與 SteamOS 版本。")
@@ -196,7 +196,7 @@ def install(game, payload, log, progress, cancel=lambda: None):
         p = os.path.join(game, *f["path"].split("/")); bak = p + BAK; tmp = p + TMP
         log("處理 " + f["path"])
         if os.path.isfile(p) and os.path.getsize(p) == f["new_size"] and sha256_file(p) == f["new_sha256"] and os.path.isfile(bak):
-            log("  已是漢化版，略過"); state["n"] += f["new_size"]; progress(min(1.0, state["n"] / total)); done.append(f); continue
+            log("  已是繁中化版，略過"); state["n"] += f["new_size"]; progress(min(1.0, state["n"] / total)); done.append(f); continue
         # find the original: the backup if we made one, else the file itself
         if os.path.isfile(bak):
             src = bak
@@ -218,7 +218,7 @@ def remove(game, log):
     """Put the originals back.  Only files named in our manifest are touched."""
     if zhtw_movies: zhtw_movies.remove_movies(game, log)
     m = read_manifest(game)
-    if not m: raise RuntimeError("找不到安裝紀錄（" + MANIFEST_NAME + "），沒有可移除的漢化包。")
+    if not m: raise RuntimeError("找不到安裝紀錄（" + MANIFEST_NAME + "），沒有可移除的繁中化包。")
     for f in m["files"]:
         p = os.path.join(game, *f["path"].split("/")); bak = p + BAK
         if os.path.isfile(bak):
@@ -229,7 +229,7 @@ def remove(game, log):
     for n in (MANIFEST_NAME, VERSION_FILE):
         q = os.path.join(game, n)
         if os.path.isfile(q): os.remove(q)
-    log("漢化包已移除")
+    log("繁中化包已移除")
 
 
 # ---------------------------------------------------------------- Japanese language pack (only ever copied from the user's own folder)
@@ -373,7 +373,7 @@ def cli(args):
     st = installed_state(game); act = args.action
     if not act:
         if st != "none":
-            print("已安裝過（狀態：%s）。1 更新／修復  2 只移除漢化包  3 移除漢化包與日文包  4 取消" % st); c = input("> ").strip()
+            print("已安裝過（狀態：%s）。1 更新／修復  2 只移除繁中化包  3 移除繁中化包與日文包  4 取消" % st); c = input("> ").strip()
             act = {"1": "install", "2": "remove", "3": "remove-all"}.get(c)
         else: act = "install"
         if not act: return 0
@@ -403,7 +403,7 @@ def cli(args):
                 elif not ff: print("沒有找到 ffmpeg，影片維持日文。")
             if args.ffmpeg:
                 try: zhtw_movies.install_movies(game, args.ffmpeg, log, progress); print()
-                except Exception as e: print("影片中文化已略過（保持日文）：", e)
+                except Exception as e: print("影片繁中化已略過（保持日文）：", e)
             print(FINISH_TEXT % VERSION)
     except Exception as e:
         print("\n錯誤：", e); return 1
@@ -436,10 +436,10 @@ def gui(args):
     ttk.Checkbutton(f1, text="代勞模式（建議勾選）：自動找遊戲資料夾、日文包與 ffmpeg，找得到的步驟就不再詢問", variable=auto).pack(anchor="w", pady=2)
 
     # page: maintenance menu
-    f2 = ttk.Frame(holder); frames["menu"] = f2; title(f2, "已偵測到安裝過漢化包")
+    f2 = ttk.Frame(holder); frames["menu"] = f2; title(f2, "已偵測到安裝過繁中化包")
     lbl_state = ttk.Label(f2, text=""); lbl_state.pack(anchor="w", pady=(0, 10))
-    for val, t in (("install", "更新／修復（重新套用漢化檔）"), ("remove", "只移除漢化包（還原原本的檔案）"),
-                   ("remove-all", "移除漢化包與日文包（日文包只移除由本程式複製的檔案）")):
+    for val, t in (("install", "更新／修復（重新套用繁中化檔）"), ("remove", "只移除繁中化包（還原原本的檔案）"),
+                   ("remove-all", "移除繁中化包與日文包（日文包只移除由本程式複製的檔案）")):
         ttk.Radiobutton(f2, text=t, value=val, variable=st["action"]).pack(anchor="w", pady=4)
 
     # page: game folder
@@ -454,35 +454,34 @@ def gui(args):
     ttk.Button(rowf, text="瀏覽…", command=browse).pack(side="left", padx=6)
     lbl_folder = ttk.Label(f3, text="", foreground="#a00", wraplength=700, justify="left"); lbl_folder.pack(anchor="w", pady=6)
 
-    # page: Japanese language pack
-    fj = ttk.Frame(holder); frames["jp"] = fj; title(fj, "日文語言包")
-    ttk.Label(fj, text=("遊戲資料夾裡還沒有日文語言包，漢化包需要它才能運作。" + chr(10) +
-                        "本程式不提供日文包，請指定你自己已取得的日文包資料夾" + chr(10) +
-                        "（內含 FONT、JPN、ms0 三個資料夾）；程式只會複製缺少的檔案，不會覆蓋同大小的現有檔案。"),
-              justify="left", wraplength=700).pack(anchor="w")
+    # page: Japanese language pack (a step of its own: choose the pack first, the movies come next)
+    fj = ttk.Frame(holder); frames["jp"] = fj; title(fj, "步驟：日文語言包")
+    lbl_jp_head = ttk.Label(fj, text="", justify="left", wraplength=700); lbl_jp_head.pack(anchor="w")
+    ttk.Label(fj, text="繁中化包以日文版為基礎，需要日文語言包。本程式不提供日文包；已安裝的會自動略過，沒有的話請指定你自己已取得的日文包資料夾（內含 FONT、JPN、ms0 三個資料夾），程式只會複製缺少的檔案，不會覆蓋同大小的現有檔案。",
+              justify="left", wraplength=700, foreground="gray").pack(anchor="w", pady=(6, 0))
     jpvar = tk.StringVar(); jprow = ttk.Frame(fj); jprow.pack(fill="x", pady=10)
-    ttk.Entry(jprow, textvariable=jpvar).pack(side="left", fill="x", expand=True)
+    jp_entry = ttk.Entry(jprow, textvariable=jpvar); jp_entry.pack(side="left", fill="x", expand=True)
     def jbrowse():
         d = filedialog.askdirectory()
         if d: jpvar.set(d)
-    ttk.Button(jprow, text="瀏覽…", command=jbrowse).pack(side="left", padx=6)
+    jp_btn = ttk.Button(jprow, text="瀏覽…", command=jbrowse); jp_btn.pack(side="left", padx=6)
     lbl_jp = ttk.Label(fj, text="", foreground="#a00", wraplength=700, justify="left"); lbl_jp.pack(anchor="w", pady=6)
     ttk.Label(fj, text="沒有日文包？請自行取得後再執行本安裝程式；按「取消」離開。", foreground="gray").pack(anchor="w")
 
     # page: optional movies
-    fv = ttk.Frame(holder); frames["video"] = fv; title(fv, "影片中文化（選用）")
-    want_video = tk.BooleanVar(value=False); ffvar = tk.StringVar()
-    ttk.Label(fv, text=("遊戲裡有 5 支文字卡影片（工作人員名單、年表、捲動名單、康德引言卡）。" + chr(10) +
-                        "勾選後，安裝程式會用你自備的 ffmpeg 把中文字幕燒進影片（約需數分鐘）。" + chr(10) +
-                        "本程式不下載、也不內附任何軟體；ffmpeg 需含 libx264 與 libass。不勾選則維持日文影片。"),
+    fv = ttk.Frame(holder); frames["video"] = fv; title(fv, "步驟：影片繁中化（選用）")
+    want_video = tk.StringVar(value="skip"); ffvar = tk.StringVar()
+    ttk.Label(fv, text="遊戲裡有 5 支只有文字的影片：康德引言卡（開頭的《永久和平論》引言）、工作人員名單、捲動名單（片尾）、兩部年表（前情提要），共 10 個檔案（720p 與 1080p）。繁中化會把中文字幕燒進影片裡，約需數分鐘；不繁中化則這 5 支影片維持日文，其他部分不受影響。",
               justify="left", wraplength=700).pack(anchor="w")
-    ttk.Checkbutton(fv, text="同時中文化影片", variable=want_video).pack(anchor="w", pady=8)
+    ttk.Radiobutton(fv, text="略過，影片維持日文（建議）", value="skip", variable=want_video, command=lambda: refresh()).pack(anchor="w", pady=(12, 2))
+    ttk.Radiobutton(fv, text="同時繁中化影片（需要自備 ffmpeg）", value="do", variable=want_video, command=lambda: refresh()).pack(anchor="w")
+    ttk.Label(fv, text="ffmpeg 位置（需含 libx264 與 libass；本程式不下載、不內附任何軟體）：").pack(anchor="w", pady=(12, 2))
     ffrow = ttk.Frame(fv); ffrow.pack(fill="x")
-    ttk.Entry(ffrow, textvariable=ffvar).pack(side="left", fill="x", expand=True)
+    ff_entry = ttk.Entry(ffrow, textvariable=ffvar); ff_entry.pack(side="left", fill="x", expand=True)
     def ffbrowse():
         d = filedialog.askopenfilename(title="選擇 ffmpeg 執行檔")
         if d: ffvar.set(d)
-    ttk.Button(ffrow, text="瀏覽…", command=ffbrowse).pack(side="left", padx=6)
+    ff_btn = ttk.Button(ffrow, text="瀏覽…", command=ffbrowse); ff_btn.pack(side="left", padx=6)
     lbl_video = ttk.Label(fv, text="", foreground="#a00", wraplength=700, justify="left"); lbl_video.pack(anchor="w", pady=8)
 
     # page: install
@@ -509,7 +508,10 @@ def gui(args):
         elif p == "menu": btn_next.config(state="normal")
         elif p == "folder": btn_next.config(state="normal", text="下一步" if st["action"].get() == "install" else "移除")
         elif p == "jp": btn_next.config(state="normal", text="下一步")
-        elif p == "video": btn_next.config(state="normal", text="安裝")
+        elif p == "video":
+            doing = want_video.get() == "do"
+            btn_next.config(state="normal", text="安裝" if doing else "略過影片並安裝")
+            ff_entry.config(state="normal" if doing else "disabled"); ff_btn.config(state="normal" if doing else "disabled")
         elif p == "end": btn_next.config(state="normal", text="關閉")
         btn_cancel.config(state="disabled" if cur["busy"] else "normal")
 
@@ -523,7 +525,7 @@ def gui(args):
         if p == "disc": show("folder_or_menu")
         elif p == "menu": goto_folder()
         elif p == "folder": start()
-        elif p == "jp": start_with_pack()
+        elif p == "jp": jp_next()
         elif p == "video": start_run()
         elif p == "end": root.destroy()
 
@@ -532,7 +534,7 @@ def gui(args):
         if p == "folder": show("menu" if st.get("had") else "disc")
         elif p == "menu": show("disc")
         elif p == "jp": show("folder")
-        elif p == "video": show("jp" if st.get("needs_pack") else "folder")
+        elif p == "video": show("jp")
 
     real_show = show
     def show(p):                      # noqa: F811  (wrap to resolve the virtual page)
@@ -545,7 +547,7 @@ def gui(args):
         elif p == "video":
             if auto.get() and not ffvar.get():
                 ff = find_ffmpeg_auto()
-                if ff: ffvar.set(ff); lbl_video.config(text="代勞模式：已自動找到 ffmpeg；要中文化影片請勾選上方方塊。", foreground="#060")
+                if ff: ffvar.set(ff); lbl_video.config(text="代勞模式：已自動找到 ffmpeg，要繁中化影片請選「同時繁中化影片」。", foreground="#060")
             real_show(p)
         else: real_show(p)
 
@@ -560,27 +562,13 @@ def gui(args):
         g = resolve_game(pathvar.get())
         if not g: lbl_folder.config(text="這不是有效的遊戲資料夾（資料夾名稱必須是 mgspw，或其上層的 MGS_PW）。"); return
         lbl_folder.config(text=""); st["game"] = g
-        if st["action"].get() == "install":
-            jst, _ = jp_status(g); st["pack"] = None
-            if jst == "missing":
-                lbl_jp.config(text="")
-                if auto.get():
-                    root.config(cursor="watch"); root.update()
-                    found = find_pack_auto(g); root.config(cursor="")
-                    if found: jpvar.set(found); start_with_pack(); return
-                    lbl_jp.config(text="代勞模式：已在下載資料夾、桌面、USB／SD 卡等位置找過，沒有找到日文包。請手動指定，或先把日文包放到「下載」資料夾後再執行一次。")
-                show("jp"); return
-            probs = check_game(g, payload, logf)
-            if probs: lbl_folder.config(text="\n".join(probs[:4])); return
-            ok, need, free = free_space_ok(g, payload)
-            if not ok: lbl_folder.config(text="磁碟空間不足：需要約 %d MB，可用 %d MB。" % (need >> 20, free >> 20)); return
-        if st["action"].get() == "install": st["needs_pack"] = False; lbl_video.config(text="") if zhtw_movies else None; show("video"); return
+        if st["action"].get() == "install": show_jp(g); return
         cur["busy"] = True; show("run")
         threading.Thread(target=worker, daemon=True).start()
 
     def start_run():
         st["ffmpeg"] = None
-        if want_video.get():
+        if want_video.get() == "do":
             try:
                 if not zhtw_movies: raise RuntimeError("此版本安裝程式沒有影片功能。")
                 ff, _ = zhtw_movies.tools_from(ffvar.get()); zhtw_movies.check_ffmpeg(ff); st["ffmpeg"] = ff
@@ -588,12 +576,39 @@ def gui(args):
         cur["busy"] = True; show("run")
         threading.Thread(target=worker, daemon=True).start()
 
-    def start_with_pack():
-        src, probs = resolve_pack(jpvar.get().strip().strip('"'))
-        if not src: lbl_jp.config(text="日文包資料夾驗證失敗：" + chr(10) + chr(10).join(probs[:5])); return
-        ok, need, free = free_space_ok(st["game"], payload, extra=sum(e["size"] for e in jp_list()))
-        if not ok: lbl_jp.config(text="磁碟空間不足：需要約 %d MB，可用 %d MB。" % (need >> 20, free >> 20)); return
-        st["pack"] = src; st["needs_pack"] = True; lbl_jp.config(text=""); lbl_video.config(text=""); show("video")
+    def show_jp(g):
+        st["jst"], _ = jp_status(g); st["pack"] = None; lbl_jp.config(text="")
+        if st["jst"] == "installed":
+            lbl_jp_head.config(text="✓ 已偵測到遊戲資料夾裡有日文語言包，不需要再指定。按「下一步」繼續。", foreground="#060")
+            jp_entry.config(state="disabled"); jp_btn.config(state="disabled")
+        else:
+            jp_entry.config(state="normal"); jp_btn.config(state="normal")
+            lbl_jp_head.config(text="遊戲資料夾裡還沒有日文語言包。請指定日文包資料夾，再按「下一步」。", foreground="#a00")
+            if auto.get() and not jpvar.get():
+                lbl_jp_head.config(text="代勞模式：正在尋找你的日文包資料夾（下載、桌面、USB／SD 卡…），請稍候…", foreground="gray")
+                root.config(cursor="watch"); real_show("jp"); root.update()
+                found = find_pack_auto(g); root.config(cursor="")
+                if found:
+                    jpvar.set(found); lbl_jp_head.config(text="代勞模式：已自動找到日文包資料夾，請確認後按「下一步」。", foreground="#060")
+                else:
+                    lbl_jp_head.config(text="遊戲資料夾裡還沒有日文語言包。", foreground="#a00")
+                    lbl_jp.config(text="代勞模式：在下載資料夾、桌面、USB／SD 卡等位置都沒有找到日文包。請按「瀏覽…」手動指定。")
+        show("jp")
+
+    def jp_next():
+        g = st["game"]
+        if st.get("jst") == "installed":
+            st["pack"] = None
+            probs = check_game(g, payload, logf)
+            if probs: lbl_jp.config(text="\n".join(probs[:4])); return
+            ok, need, free = free_space_ok(g, payload)
+        else:
+            src, probs = resolve_pack(jpvar.get().strip().strip(chr(34)))
+            if not src: lbl_jp.config(text="日文包資料夾驗證失敗：" + chr(10) + chr(10).join(probs[:5])); return
+            ok, need, free = free_space_ok(g, payload, extra=sum(e["size"] for e in jp_list()))
+            st["pack"] = src
+        if not ok: st["pack"] = None; lbl_jp.config(text="磁碟空間不足：需要約 %d MB，可用 %d MB。" % (need >> 20, free >> 20)); return
+        lbl_jp.config(text=""); lbl_video.config(text=""); show("video")
 
     def worker():
         err = None
@@ -606,16 +621,16 @@ def gui(args):
                 install(st["game"], payload, logf, progf)
                 if st.get("ffmpeg"):
                     try: zhtw_movies.install_movies(st["game"], st["ffmpeg"], logf, progf)
-                    except Exception as e: st["video_err"] = str(e); logf("影片中文化已略過（保持日文）：" + str(e))
+                    except Exception as e: st["video_err"] = str(e); logf("影片繁中化已略過（保持日文）：" + str(e))
         except Exception as e: err = str(e)
         def fin():
             cur["busy"] = False; endtxt.config(state="normal"); endtxt.delete("1.0", "end")
             if err: endtxt.insert("1.0", "發生錯誤：\n\n" + err + "\n\n沒有留下半完成的檔案（暫存檔已清除）。若問題持續，請至 GitHub Issues 回報並附上版本號 " + VERSION + "。")
-            elif st["action"].get() == "remove": endtxt.insert("1.0", "漢化包已移除，原本的檔案已還原。")
-            elif st["action"].get() == "remove-all": endtxt.insert("1.0", "漢化包與日文包已移除（日文包只移除由本程式複製的檔案）。")
+            elif st["action"].get() == "remove": endtxt.insert("1.0", "繁中化包已移除，原本的檔案已還原。")
+            elif st["action"].get() == "remove-all": endtxt.insert("1.0", "繁中化包與日文包已移除（日文包只移除由本程式複製的檔案）。")
             else:
                 endtxt.insert("1.0", FINISH_TEXT % VERSION)
-                if st.get("video_err"): endtxt.insert("end", chr(10) + chr(10) + "影片中文化未完成（已保持日文影片）：" + chr(10) + st["video_err"])
+                if st.get("video_err"): endtxt.insert("end", chr(10) + chr(10) + "影片繁中化未完成（已保持日文影片）：" + chr(10) + st["video_err"])
             endtxt.config(state="disabled"); show("end")
         root.after(0, fin)
 
@@ -623,8 +638,25 @@ def gui(args):
     show("disc")
     if args.selftest:
         for p in ("disc", "folder_or_menu", "menu", "folder", "jp", "video", "run", "end"): show(p); root.update()
+        import tempfile
+        auto.set(False); tmp = tempfile.mkdtemp(); g = os.path.join(tmp, "mgspw"); os.makedirs(g); st["game"] = g
+        show_jp(g); root.update(); assert cur["page"] == "jp" and st["jst"] == "missing", "jp step must show when the pack is missing"
+        want_video.set("do"); show("video"); root.update(); assert btn_next.cget("text") == "安裝", btn_next.cget("text")
+        want_video.set("skip"); refresh(); root.update(); assert btn_next.cget("text") == "略過影片並安裝", btn_next.cget("text")
+        assert str(ff_entry.cget("state")) == "disabled", "ffmpeg box must be disabled while skipping"
+        shutil.rmtree(tmp, ignore_errors=True)
         root.destroy(); print("gui selftest ok"); return 0
     root.mainloop(); return 0
+
+
+def _hide_console():
+    """Frozen Windows build is a console program (so --cli works); hide its window when the wizard opens."""
+    if sys.platform == "win32" and getattr(sys, "frozen", False):
+        try:
+            import ctypes
+            hwnd = ctypes.windll.kernel32.GetConsoleWindow()
+            if hwnd: ctypes.windll.user32.ShowWindow(hwnd, 0)
+        except Exception: pass
 
 
 def main():
@@ -638,7 +670,14 @@ def main():
     try: import tkinter  # noqa: F401
     except ImportError:
         print("找不到 tkinter（視窗元件），改用命令列模式。"); a.auto = a.auto or IS_LINUX; return cli(a)
-    return gui(a)
+    _hide_console()
+    try: return gui(a)
+    except Exception as e:
+        try:
+            import tkinter; from tkinter import messagebox
+            r = tkinter.Tk(); r.withdraw(); messagebox.showerror(APP, "程式發生錯誤，請至 GitHub Issues 回報並附上版本號 %s：%s%s" % (VERSION, chr(10) * 2, e))
+        except Exception: pass
+        return 1
 
 
 if __name__ == "__main__":
