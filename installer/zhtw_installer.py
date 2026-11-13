@@ -238,6 +238,12 @@ def jp_list():
     with open(p, encoding="utf-8") as f: return json.load(f)
 
 
+def _movie_paths():
+    """The 10 text-card movie files: once translated they have other sizes, so any existing file counts as present."""
+    try: return {m["path"] for m in zhtw_movies.load_movies()["items"]}
+    except Exception: return set()
+
+
 def jp_status(game):
     """('installed', []) when every pack file is in the game folder with the expected size (a file our patch replaced may have its new size),
     else ('missing', [relative paths])."""
@@ -245,10 +251,10 @@ def jp_status(game):
     try:
         for f in load_payload()["files"]: alt[f["path"]] = {f["old_size"], f["new_size"]}
     except OSError: pass
-    missing = []
+    missing = []; movie_paths = _movie_paths()
     for e in jp_list():
         p = os.path.join(game, *e["path"].split("/"))
-        ok = os.path.isfile(p) and os.path.getsize(p) in ({e["size"]} | alt.get(e["path"], set()))
+        ok = os.path.isfile(p) and (e["path"] in movie_paths or os.path.getsize(p) in ({e["size"]} | alt.get(e["path"], set())))
         if not ok: missing.append(e["path"])
     return ("installed" if not missing else "missing"), missing
 
@@ -274,6 +280,11 @@ def install_jppack(game, src_root, log, progress, cancel=lambda: None):
     """Copy the pack files that are missing from the game folder.  Existing files of the same size are left alone; a file of a
     different size is set aside as <name>.jppack_orig before being replaced.  Everything done is recorded for clean removal."""
     entries = jp_list(); total = sum(e["size"] for e in entries); doneb = [0]; rec = []
+    alt = {}
+    try:
+        for f in load_payload()["files"]: alt[f["path"]] = {f["old_size"], f["new_size"]}
+    except OSError: pass
+    movie_paths = _movie_paths()
     old = {}
     mp = os.path.join(game, JP_MANIFEST)
     if os.path.isfile(mp):
@@ -283,8 +294,13 @@ def install_jppack(game, src_root, log, progress, cancel=lambda: None):
         cancel()
         rel = e["path"]; dst = os.path.join(game, *rel.split("/")); src = os.path.join(src_root, *rel.split("/"))
         if rel in old: rec.append(old[rel])
-        if os.path.isfile(dst) and os.path.getsize(dst) == e["size"]:
-            doneb[0] += e["size"]; progress(doneb[0] / total); continue
+        if os.path.isfile(dst):
+            # never overwrite an existing file: the same size means it is already there, a different size may be our own translated
+            # file or another mod's -- leave it alone (an earlier version replaced such files and broke a translated install)
+            sz = os.path.getsize(dst)
+            if sz != e["size"] and sz not in alt.get(rel, set()) and rel not in movie_paths:
+                log("已存在但大小不同，保留不動：" + rel + "（若遊戲無法正常執行，請用 Steam「驗證遊戲檔案完整性」還原）")
+            doneb[0] += e["size"]; progress(min(1.0, doneb[0] / total)); continue
         os.makedirs(os.path.dirname(dst), exist_ok=True); tmp = dst + TMP
         log("複製 " + rel)
         with open(src, "rb") as a, open(tmp, "wb") as b:
