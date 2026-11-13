@@ -10,7 +10,7 @@ Usage:
 """
 import argparse, hashlib, json, os, re, shutil, sys, time, zlib
 
-VERSION = "Beta 0.2"
+VERSION = "Beta 0.2.1"
 APP = "MGS Peace Walker 繁體中文化"
 HERE = os.path.dirname(os.path.abspath(sys.executable if getattr(sys, "frozen", False) else __file__))
 PAYLOAD = os.path.join(HERE if os.path.isdir(os.path.join(HERE, "payload")) else getattr(sys, "_MEIPASS", HERE), "payload")   # next to the program (exe or script)
