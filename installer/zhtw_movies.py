@@ -13,7 +13,7 @@ BASE = getattr(sys, "_MEIPASS", HERE)
 PAYLOAD = os.path.join(HERE if os.path.isdir(os.path.join(HERE, "payload")) else BASE, "payload")
 for _d in (os.path.join(BASE, "vendor"), os.path.join(HERE, "vendor")):
     if os.path.isdir(_d) and _d not in sys.path: sys.path.insert(0, _d)
-BAK = ".zhtw_orig"; TMP = ".zhtw_tmp"
+BAK = ".zhtw_orig"; TMP = ".zhtw_tmp"; MOD = ".zhtw_mod"
 MOVIES_MANIFEST = "zhtw_movies_manifest.json"
 NOWIN = getattr(subprocess, "CREATE_NO_WINDOW", 0)
 CRF = {720: 18, 1080: 19}
@@ -140,4 +140,40 @@ def remove_movies(game, log):
             if os.path.isfile(p): os.remove(p)
             os.replace(bak, p); log("已還原影片 " + r["path"])
         else: log("警告：找不到影片備份，未還原 " + r["path"])
+    os.remove(mp)
+
+
+def switch_movies(game, target, log):
+    """Swap between the Japanese originals ('jp') and the translated movies ('zh') without deleting either.
+    zh active: <file> is translated, <file>.zhtw_orig is the original.  jp active: <file> is the original, <file>.zhtw_mod is the translated one."""
+    mp = os.path.join(game, MOVIES_MANIFEST)
+    if not os.path.isfile(mp): return
+    recs = json.load(open(mp, encoding="utf-8"))["files"]; done = []
+    try:
+        for r in recs:
+            p = os.path.join(game, *r["path"].split("/")); bak = p + BAK; mod = p + MOD
+            if target == "jp":
+                if not os.path.isfile(bak): continue
+                if os.path.isfile(mod): os.remove(mod)
+                os.replace(p, mod); os.replace(bak, p); done.append((p, bak, mod)); log("影片切回日文原版 " + r["path"])
+            else:
+                if not os.path.isfile(mod): continue
+                if os.path.isfile(bak): os.remove(bak)
+                os.replace(p, bak); os.replace(mod, p); done.append((p, bak, mod)); log("影片切換為繁體中文版 " + r["path"])
+    except Exception:
+        for p, bak, mod in reversed(done):
+            try:
+                if target == "jp": os.replace(p, bak); os.replace(mod, p)
+                else: os.replace(p, mod); os.replace(bak, p)
+            except OSError: pass
+        raise
+
+
+def drop_movie_mods(game, log):
+    """Delete the kept translated movies (used when removing the module while the Japanese originals are active)."""
+    mp = os.path.join(game, MOVIES_MANIFEST)
+    if not os.path.isfile(mp): return
+    for r in json.load(open(mp, encoding="utf-8"))["files"]:
+        q = os.path.join(game, *r["path"].split("/")) + MOD
+        if os.path.isfile(q): os.remove(q); log("已刪除保留的繁體中文影片 " + r["path"])
     os.remove(mp)

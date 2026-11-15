@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""MGS Peace Walker (Master Collection) 繁體中文化 安裝程式（Windows／SteamOS 共用）。
+"""MGS Peace Walker (Master Collection) 繁體中文模組 安裝程式（Windows／SteamOS 共用）。
 
 有視窗介面（tkinter）時開精靈；沒有 tkinter 或加 --cli 時用命令列。
 Usage:
@@ -10,27 +10,27 @@ Usage:
 """
 import argparse, hashlib, json, os, re, shutil, sys, time, zlib
 
-VERSION = "Beta 0.2.1"
-APP = "MGS Peace Walker 繁體中文化"
+VERSION = "Beta 0.3"
+APP = "MGS Peace Walker 繁體中文模組"
 HERE = os.path.dirname(os.path.abspath(sys.executable if getattr(sys, "frozen", False) else __file__))
 PAYLOAD = os.path.join(HERE if os.path.isdir(os.path.join(HERE, "payload")) else getattr(sys, "_MEIPASS", HERE), "payload")   # next to the program (exe or script)
 MANIFEST_NAME = "zhtw_manifest.json"       # written into the game's mgspw folder
 JP_MANIFEST = "jppack_manifest.json"       # what this installer copied from the Japanese pack (for clean removal)
 JP_BAK = ".jppack_orig"
 VERSION_FILE = "zhtw_version.txt"
-BAK = ".zhtw_orig"; TMP = ".zhtw_tmp"
+BAK = ".zhtw_orig"; TMP = ".zhtw_tmp"; MOD = ".zhtw_mod"
 IS_LINUX = sys.platform.startswith("linux")
 
 DISCLAIMER = [
-    "本繁中化包為非官方的玩家自製作品，與 Konami 及任何版權方無關。",
-    "本繁中化包的翻譯、程式與文件由 AI（Anthropic 的 Claude）協助製作，並經製作者逐步檢視與修正；仍可能有誤譯、不通順、用詞不一致或缺字漏字，歡迎回報。",
-    "本繁中化包只適用於日文版（以日文版為基礎，需搭配日文語言包）；英文版的繁體中文模組也將會製作。本繁中化包不含遊戲本體，也不含日文語言包；使用者須自行擁有正版遊戲，日文語言包須自行取得，本程式不提供來源。",
+    "本繁體中文模組為非官方的玩家自製作品，與 Konami 及任何版權方無關。",
+    "本繁體中文模組的翻譯、程式與文件由 AI（Anthropic 的 Claude）協助製作，並經製作者逐步檢視與修正；仍可能有誤譯、不通順、用詞不一致或缺字漏字，歡迎回報。",
+    "本繁體中文模組只適用於日文版（以日文版為基礎，需搭配日文語言包）。本繁體中文模組不含遊戲本體，也不含日文語言包；使用者須自行擁有正版遊戲，日文語言包須自行取得，本程式不提供來源。",
     "安裝前請自行備份存檔。本程式會備份被取代的檔案，但製作者對任何資料損失、遊戲無法執行或其他後果不負責任。",
     "禁止商用，禁止轉售。",
     "遊戲內容與商標的著作權屬於原權利人。",
-    "請自行確認所在地區的法律是否允許使用本繁中化包。",
+    "請自行確認所在地區的法律是否允許使用本繁體中文模組。",
     "目前為測試階段，翻譯可能不完整，或有缺字、漏字，歡迎回報；回報請至 GitHub Issues，並附上版本號。"
-    "不想繼續使用時，可重新執行本安裝程式選擇「移除繁中化包」，會還原原本的檔案。收到回報後會修正並釋出新版本。",
+    "不想繼續使用時，可重新執行本安裝程式選擇「移除繁體中文模組」，會還原原本的檔案。收到回報後會修正並釋出新版本。",
 ]
 DISCLAIMER_STEAMOS = ("製作者沒有 SteamOS 設備，SteamOS 版安裝程式只是順便製作，未經實機測試；"
                       "若發現重大執行瑕疵，將中止 SteamOS 版安裝程式的更新。回報時請註明設備型號與 SteamOS 版本。")
@@ -128,15 +128,67 @@ def read_manifest(game):
     return None
 
 
+def active_mode(game):
+    """'zh' = the translated files are in place (default); 'jp' = the Japanese originals are in place and the translated files are kept as <name>.zhtw_mod."""
+    m = read_manifest(game)
+    return (m or {}).get("active", "zh")
+
+
 def installed_state(game):
-    """'none' | 'installed' | 'partial' based on the manifest and the files present."""
+    """'none' | 'installed' | 'jp' (module kept, Japanese active) | 'partial' based on the manifest and the files present."""
     m = read_manifest(game)
     if not m: return "none"
-    ok = 0
+    jp = m.get("active", "zh") == "jp"; ok = 0
     for f in m["files"]:
         p = os.path.join(game, *f["path"].split("/"))
-        if os.path.isfile(p) and os.path.getsize(p) == f["new_size"] and os.path.isfile(p + BAK): ok += 1
-    return "installed" if ok == len(m["files"]) else "partial"
+        if jp:
+            if os.path.isfile(p) and os.path.isfile(p + MOD): ok += 1
+        elif os.path.isfile(p) and os.path.getsize(p) == f["new_size"] and os.path.isfile(p + BAK): ok += 1
+    return ("jp" if jp else "installed") if ok == len(m["files"]) else "partial"
+
+
+def _write_manifest(game, m):
+    with open(os.path.join(game, MANIFEST_NAME), "w", encoding="utf-8") as fh: json.dump(m, fh, ensure_ascii=False, indent=1)
+
+
+def switch_mode(game, target, log):
+    """Switch between the Japanese original ('jp') and the Traditional-Chinese module ('zh') by renaming only; nothing is deleted
+    and no reinstall is needed.  zh active: <file> translated + <file>.zhtw_orig original.  jp active: <file> original + <file>.zhtw_mod translated."""
+    m = read_manifest(game)
+    if not m: raise RuntimeError("找不到安裝紀錄（" + MANIFEST_NAME + "），無法切換。請先安裝繁體中文模組。")
+    cur = m.get("active", "zh")
+    if cur == target: log("目前已經是" + ("日文原版" if target == "jp" else "繁體中文模組") + "，不需要切換。"); return
+    problems = []
+    for f in m["files"]:
+        p = os.path.join(game, *f["path"].split("/"))
+        for q in ([p, p + BAK] if target == "jp" else [p, p + MOD]):
+            if not os.path.isfile(q): problems.append("找不到 " + os.path.basename(q) + "（" + f["path"] + "）")
+    if problems:
+        raise RuntimeError("無法切換，檔案不完整（沒有改動任何檔案）：\n" + "\n".join(problems[:6]) +
+                           "\n建議重新執行安裝程式選「更新／修復」。")
+    done = []
+    try:
+        for f in m["files"]:
+            p = os.path.join(game, *f["path"].split("/")); bak = p + BAK; mod = p + MOD
+            if target == "jp":
+                if os.path.isfile(mod): os.remove(mod)
+                os.replace(p, mod); os.replace(bak, p)
+            else:
+                if os.path.isfile(bak): os.remove(bak)
+                os.replace(p, bak); os.replace(mod, p)
+            done.append((p, bak, mod)); log(("切回日文原版 " if target == "jp" else "切換為繁體中文版 ") + f["path"])
+        if zhtw_movies: zhtw_movies.switch_movies(game, target, log)
+    except Exception:
+        for p, bak, mod in reversed(done):
+            try:
+                if target == "jp": os.replace(p, bak); os.replace(mod, p)
+                else: os.replace(p, mod); os.replace(bak, p)
+            except OSError: pass
+        raise
+    m["active"] = target; _write_manifest(game, m)
+    with open(os.path.join(game, VERSION_FILE), "w", encoding="utf-8") as fh:
+        fh.write("MGS Peace Walker 繁體中文模組 " + str(m.get("version", VERSION)) + ("（目前使用：日文原版；繁體中文模組已保留，可隨時切回）" if target == "jp" else "") + "\n")
+    log("已切換為" + ("日文原版（繁體中文模組已保留）" if target == "jp" else "繁體中文模組"))
 
 
 def check_game(game, payload, log, pack_given=False):
@@ -176,6 +228,7 @@ def build_file(src_path, f, B, dat_path, out_path, progress):
 
 def install(game, payload, log, progress, cancel=lambda: None):
     """Install or repair.  Originals are kept next to the new files as <name>.zhtw_orig."""
+    if read_manifest(game) and active_mode(game) == "jp": switch_mode(game, "zh", log)     # repair/update always works on the translated files
     B = payload["block"]; done = []
     # phase 1: verify every source file first, so a mismatch stops the run before anything is modified
     for f in payload["files"]:
@@ -196,7 +249,7 @@ def install(game, payload, log, progress, cancel=lambda: None):
         p = os.path.join(game, *f["path"].split("/")); bak = p + BAK; tmp = p + TMP
         log("處理 " + f["path"])
         if os.path.isfile(p) and os.path.getsize(p) == f["new_size"] and sha256_file(p) == f["new_sha256"] and os.path.isfile(bak):
-            log("  已是繁中化版，略過"); state["n"] += f["new_size"]; progress(min(1.0, state["n"] / total)); done.append(f); continue
+            log("  已是繁體中文模組版，略過"); state["n"] += f["new_size"]; progress(min(1.0, state["n"] / total)); done.append(f); continue
         # find the original: the backup if we made one, else the file itself
         if os.path.isfile(bak):
             src = bak
@@ -208,17 +261,27 @@ def install(game, payload, log, progress, cancel=lambda: None):
             os.remove(tmp); raise RuntimeError("產生的檔案驗證失敗，已停止：" + f["path"])
         if not os.path.isfile(bak): os.replace(p, bak)
         os.replace(tmp, p); done.append(f)
-    manifest = {"version": VERSION, "installed_at": time.strftime("%Y-%m-%d %H:%M:%S"), "files": done}
+    manifest = {"version": VERSION, "installed_at": time.strftime("%Y-%m-%d %H:%M:%S"), "active": "zh", "files": done}
     with open(os.path.join(game, MANIFEST_NAME), "w", encoding="utf-8") as fh: json.dump(manifest, fh, ensure_ascii=False, indent=1)
-    with open(os.path.join(game, VERSION_FILE), "w", encoding="utf-8") as fh: fh.write("MGS Peace Walker 繁體中文化 " + VERSION + "\n")
+    with open(os.path.join(game, VERSION_FILE), "w", encoding="utf-8") as fh: fh.write("MGS Peace Walker 繁體中文模組 " + VERSION + "\n")
     log("完成")
 
 
 def remove(game, log):
-    """Put the originals back.  Only files named in our manifest are touched."""
-    if zhtw_movies: zhtw_movies.remove_movies(game, log)
+    """Put the originals back.  Only files named in our manifest are touched.  If the Japanese originals are already active
+    (module kept for switching), just delete the kept translated files."""
     m = read_manifest(game)
-    if not m: raise RuntimeError("找不到安裝紀錄（" + MANIFEST_NAME + "），沒有可移除的繁中化包。")
+    if m and m.get("active", "zh") == "jp":
+        if zhtw_movies: zhtw_movies.drop_movie_mods(game, log)
+        for f in m["files"]:
+            q = os.path.join(game, *f["path"].split("/")) + MOD
+            if os.path.isfile(q): os.remove(q); log("已刪除保留的繁體中文模組檔 " + f["path"])
+        for n in (MANIFEST_NAME, VERSION_FILE):
+            q = os.path.join(game, n)
+            if os.path.isfile(q): os.remove(q)
+        log("繁體中文模組已移除（目前本來就是日文原版）"); return
+    if zhtw_movies: zhtw_movies.remove_movies(game, log)
+    if not m: raise RuntimeError("找不到安裝紀錄（" + MANIFEST_NAME + "），沒有可移除的繁體中文模組。")
     for f in m["files"]:
         p = os.path.join(game, *f["path"].split("/")); bak = p + BAK
         if os.path.isfile(bak):
@@ -229,7 +292,7 @@ def remove(game, log):
     for n in (MANIFEST_NAME, VERSION_FILE):
         q = os.path.join(game, n)
         if os.path.isfile(q): os.remove(q)
-    log("繁中化包已移除")
+    log("繁體中文模組已移除")
 
 
 # ---------------------------------------------------------------- Japanese language pack (only ever copied from the user's own folder)
@@ -389,13 +452,16 @@ def cli(args):
     st = installed_state(game); act = args.action
     if not act:
         if st != "none":
-            print("已安裝過（狀態：%s）。1 更新／修復  2 只移除繁中化包  3 移除繁中化包與日文包  4 取消" % st); c = input("> ").strip()
-            act = {"1": "install", "2": "remove", "3": "remove-all"}.get(c)
+            sw = ("switch-zh", "切換為繁體中文模組") if active_mode(game) == "jp" else ("switch-jp", "切換回日文原版（保留繁體中文模組，可隨時切回）")
+            print("已安裝過（狀態：%s）。1 %s  2 更新／修復  3 只移除繁體中文模組  4 移除繁體中文模組與日文包  5 取消" % ({"installed": "繁體中文模組使用中", "jp": "目前為日文原版，繁體中文模組已保留", "partial": "部分檔案不完整"}.get(st, st), sw[1])); c = input("> ").strip()
+            act = {"1": sw[0], "2": "install", "3": "remove", "4": "remove-all"}.get(c)
         else: act = "install"
         if not act: return 0
     if act == "status": print("狀態：", st, read_manifest(game) and read_manifest(game)["version"] or ""); return 0
     try:
-        if act == "remove": remove(game, log)
+        if act == "switch-jp": switch_mode(game, "jp", log)
+        elif act == "switch-zh": switch_mode(game, "zh", log)
+        elif act == "remove": remove(game, log)
         elif act == "remove-all": remove(game, log); remove_jppack(game, log)
         else:
             jst, jmiss = jp_status(game); src = None
@@ -419,7 +485,7 @@ def cli(args):
                 elif not ff: print("沒有找到 ffmpeg，影片維持日文。")
             if args.ffmpeg:
                 try: zhtw_movies.install_movies(game, args.ffmpeg, log, progress); print()
-                except Exception as e: print("影片繁中化已略過（保持日文）：", e)
+                except Exception as e: print("影片繁體中文字幕已略過（保持日文）：", e)
             print(FINISH_TEXT % VERSION)
     except Exception as e:
         print("\n錯誤：", e); return 1
@@ -452,10 +518,11 @@ def gui(args):
     ttk.Checkbutton(f1, text="代勞模式（建議勾選）：自動找遊戲資料夾、日文包與 ffmpeg，找得到的步驟就不再詢問", variable=auto).pack(anchor="w", pady=2)
 
     # page: maintenance menu
-    f2 = ttk.Frame(holder); frames["menu"] = f2; title(f2, "已偵測到安裝過繁中化包")
+    f2 = ttk.Frame(holder); frames["menu"] = f2; title(f2, "已偵測到安裝過繁體中文模組")
     lbl_state = ttk.Label(f2, text=""); lbl_state.pack(anchor="w", pady=(0, 10))
-    for val, t in (("install", "更新／修復（重新套用繁中化檔）"), ("remove", "只移除繁中化包（還原原本的檔案）"),
-                   ("remove-all", "移除繁中化包與日文包（日文包只移除由本程式複製的檔案）")):
+    rb_switch = ttk.Radiobutton(f2, text="切換回日文原版（保留繁體中文模組，可隨時切回，不需重新安裝）", value="to-jp", variable=st["action"]); rb_switch.pack(anchor="w", pady=4)
+    for val, t in (("install", "更新／修復（重新套用繁體中文模組檔）"), ("remove", "只移除繁體中文模組（還原原本的檔案）"),
+                   ("remove-all", "移除繁體中文模組與日文包（日文包只移除由本程式複製的檔案）")):
         ttk.Radiobutton(f2, text=t, value=val, variable=st["action"]).pack(anchor="w", pady=4)
 
     # page: game folder
@@ -473,7 +540,7 @@ def gui(args):
     # page: Japanese language pack (a step of its own: choose the pack first, the movies come next)
     fj = ttk.Frame(holder); frames["jp"] = fj; title(fj, "步驟：日文語言包")
     lbl_jp_head = ttk.Label(fj, text="", justify="left", wraplength=700); lbl_jp_head.pack(anchor="w")
-    ttk.Label(fj, text="繁中化包以日文版為基礎，需要日文語言包。本程式不提供日文包；已安裝的會自動略過，沒有的話請指定你自己已取得的日文包資料夾（內含 FONT、JPN、ms0 三個資料夾），程式只會複製缺少的檔案，不會覆蓋同大小的現有檔案。",
+    ttk.Label(fj, text="繁體中文模組以日文版為基礎，需要日文語言包。本程式不提供日文包；已安裝的會自動略過，沒有的話請指定你自己已取得的日文包資料夾（內含 FONT、JPN、ms0 三個資料夾），程式只會複製缺少的檔案，不會覆蓋同大小的現有檔案。",
               justify="left", wraplength=700, foreground="gray").pack(anchor="w", pady=(6, 0))
     jpvar = tk.StringVar(); jprow = ttk.Frame(fj); jprow.pack(fill="x", pady=10)
     jp_entry = ttk.Entry(jprow, textvariable=jpvar); jp_entry.pack(side="left", fill="x", expand=True)
@@ -485,13 +552,13 @@ def gui(args):
     ttk.Label(fj, text="沒有日文包？請自行取得後再執行本安裝程式；按「取消」離開。", foreground="gray").pack(anchor="w")
 
     # page: optional movies
-    fv = ttk.Frame(holder); frames["video"] = fv; title(fv, "步驟：影片繁中化（選用）")
+    fv = ttk.Frame(holder); frames["video"] = fv; title(fv, "步驟：影片繁體中文字幕（選用）")
     want_video = tk.StringVar(value="skip"); ffvar = tk.StringVar()
-    ttk.Label(fv, text="遊戲裡有 5 支只有文字的影片：康德引言卡（開頭的《永久和平論》引言）、工作人員名單、捲動名單（片尾）、兩部年表（前情提要），共 10 個檔案（720p 與 1080p）。繁中化會把中文字幕燒進影片裡，約需數分鐘；不繁中化則這 5 支影片維持日文，其他部分不受影響。",
+    ttk.Label(fv, text="遊戲裡有 5 支只有文字的影片：康德引言卡（開頭的《永久和平論》引言）、工作人員名單、捲動名單（片尾）、兩部年表（前情提要），共 10 個檔案（720p 與 1080p）。繁體中文模組會把中文字幕燒進影片裡，約需數分鐘；不繁體中文模組則這 5 支影片維持日文，其他部分不受影響。",
               justify="left", wraplength=700).pack(anchor="w")
     ttk.Radiobutton(fv, text="略過，影片維持日文（建議）", value="skip", variable=want_video, command=lambda: refresh()).pack(anchor="w", pady=(12, 2))
-    ttk.Radiobutton(fv, text="同時繁中化影片（需要自備 ffmpeg）", value="do", variable=want_video, command=lambda: refresh()).pack(anchor="w")
-    ttk.Label(fv, text="ffmpeg 位置（需含 libx264 與 libass；本程式不下載、不內附任何軟體）：").pack(anchor="w", pady=(12, 2))
+    ttk.Radiobutton(fv, text="同時安裝繁體中文影片字幕（需要自備 ffmpeg）", value="do", variable=want_video, command=lambda: refresh()).pack(anchor="w")
+    ttk.Label(fv, text="ffmpeg 是免費的影片處理工具，用來把中文字幕燒進影片；需含 libx264 與 libass，本程式不下載、不內附任何軟體。\nffmpeg 位置：").pack(anchor="w", pady=(12, 2))
     ffrow = ttk.Frame(fv); ffrow.pack(fill="x")
     ff_entry = ttk.Entry(ffrow, textvariable=ffvar); ff_entry.pack(side="left", fill="x", expand=True)
     def ffbrowse():
@@ -522,7 +589,7 @@ def gui(args):
         btn_next.config(state="disabled", text="下一步")
         if p == "disc": btn_next.config(state="normal" if agree.get() else "disabled")
         elif p == "menu": btn_next.config(state="normal")
-        elif p == "folder": btn_next.config(state="normal", text="下一步" if st["action"].get() == "install" else "移除")
+        elif p == "folder": btn_next.config(state="normal", text="下一步" if st["action"].get() == "install" else ("切換" if st["action"].get() in ("to-jp", "to-zh") else "移除"))
         elif p == "jp": btn_next.config(state="normal", text="下一步")
         elif p == "video":
             doing = want_video.get() == "do"
@@ -557,13 +624,16 @@ def gui(args):
         if p == "folder_or_menu":
             g = resolve_game(pathvar.get()); st["had"] = bool(g and installed_state(g) != "none")
             if st["had"]:
-                lbl_state.config(text="目前狀態：%s　版本：%s" % ({"installed": "已安裝", "partial": "部分檔案不完整"}[installed_state(g)], (read_manifest(g) or {}).get("version", "?")))
+                s_now = installed_state(g)
+                lbl_state.config(text="目前狀態：%s　版本：%s" % ({"installed": "已安裝，繁體中文模組使用中", "jp": "目前為日文原版（繁體中文模組已保留，可隨時切回）", "partial": "部分檔案不完整"}[s_now], (read_manifest(g) or {}).get("version", "?")))
+                if s_now == "jp" or active_mode(g) == "jp": rb_switch.config(text="切換為繁體中文模組（使用已保留的檔案，不需重新安裝）", value="to-zh"); st["action"].set("to-zh")
+                else: rb_switch.config(text="切換回日文原版（保留繁體中文模組，可隨時切回，不需重新安裝）", value="to-jp"); st["action"].set("to-jp" if s_now == "installed" else "install")
                 real_show("menu")
             else: st["action"].set("install"); goto_folder()
         elif p == "video":
             if auto.get() and not ffvar.get():
                 ff = find_ffmpeg_auto()
-                if ff: ffvar.set(ff); lbl_video.config(text="代勞模式：已自動找到 ffmpeg，要繁中化影片請選「同時繁中化影片」。", foreground="#060")
+                if ff: ffvar.set(ff); lbl_video.config(text="代勞模式：已自動找到 ffmpeg，要繁體中文影片字幕請選「同時安裝繁體中文影片字幕」。", foreground="#060")
             real_show(p)
         else: real_show(p)
 
@@ -630,23 +700,27 @@ def gui(args):
         err = None
         try:
             act = st["action"].get()
-            if act == "remove": remove(st["game"], logf)
+            if act == "to-jp": switch_mode(st["game"], "jp", logf)
+            elif act == "to-zh": switch_mode(st["game"], "zh", logf)
+            elif act == "remove": remove(st["game"], logf)
             elif act == "remove-all": remove(st["game"], logf); remove_jppack(st["game"], logf)
             else:
                 if st.get("pack"): install_jppack(st["game"], st["pack"], logf, progf)
                 install(st["game"], payload, logf, progf)
                 if st.get("ffmpeg"):
                     try: zhtw_movies.install_movies(st["game"], st["ffmpeg"], logf, progf)
-                    except Exception as e: st["video_err"] = str(e); logf("影片繁中化已略過（保持日文）：" + str(e))
+                    except Exception as e: st["video_err"] = str(e); logf("影片繁體中文字幕已略過（保持日文）：" + str(e))
         except Exception as e: err = str(e)
         def fin():
             cur["busy"] = False; endtxt.config(state="normal"); endtxt.delete("1.0", "end")
             if err: endtxt.insert("1.0", "發生錯誤：\n\n" + err + "\n\n沒有留下半完成的檔案（暫存檔已清除）。若問題持續，請至 GitHub Issues 回報並附上版本號 " + VERSION + "。")
-            elif st["action"].get() == "remove": endtxt.insert("1.0", "繁中化包已移除，原本的檔案已還原。")
-            elif st["action"].get() == "remove-all": endtxt.insert("1.0", "繁中化包與日文包已移除（日文包只移除由本程式複製的檔案）。")
+            elif st["action"].get() == "to-jp": endtxt.insert("1.0", "已切換回日文原版。繁體中文模組檔案仍保留在遊戲資料夾，想用中文時再執行本安裝程式選「切換為繁體中文模組」即可，不需要重新安裝。")
+            elif st["action"].get() == "to-zh": endtxt.insert("1.0", "已切換為繁體中文模組。想回日文原版時再執行本安裝程式選「切換回日文原版」即可。")
+            elif st["action"].get() == "remove": endtxt.insert("1.0", "繁體中文模組已移除，原本的檔案已還原。")
+            elif st["action"].get() == "remove-all": endtxt.insert("1.0", "繁體中文模組與日文包已移除（日文包只移除由本程式複製的檔案）。")
             else:
                 endtxt.insert("1.0", FINISH_TEXT % VERSION)
-                if st.get("video_err"): endtxt.insert("end", chr(10) + chr(10) + "影片繁中化未完成（已保持日文影片）：" + chr(10) + st["video_err"])
+                if st.get("video_err"): endtxt.insert("end", chr(10) + chr(10) + "影片繁體中文字幕未完成（已保持日文影片）：" + chr(10) + st["video_err"])
             endtxt.config(state="disabled"); show("end")
         root.after(0, fin)
 
@@ -665,6 +739,37 @@ def gui(args):
     root.mainloop(); return 0
 
 
+def _selftest_switch():
+    import tempfile
+    tmp = tempfile.mkdtemp(); g = os.path.join(tmp, "mgspw"); os.makedirs(g)
+    logs = []
+    try:
+        files = [{"path": "a/x.bin", "old_size": 3, "new_size": 4}, {"path": "b.bin", "old_size": 3, "new_size": 4}]
+        for f in files:
+            p = os.path.join(g, *f["path"].split("/")); os.makedirs(os.path.dirname(p), exist_ok=True)
+            open(p, "wb").write(b"ZHZH"); open(p + BAK, "wb").write(b"JPJ")
+        _write_manifest(g, {"version": "t", "installed_at": "", "active": "zh", "files": files})
+        assert installed_state(g) == "installed"
+        switch_mode(g, "jp", logs.append)
+        assert installed_state(g) == "jp" and active_mode(g) == "jp"
+        for f in files:
+            p = os.path.join(g, *f["path"].split("/"))
+            assert open(p, "rb").read() == b"JPJ" and open(p + MOD, "rb").read() == b"ZHZH" and not os.path.exists(p + BAK)
+        switch_mode(g, "zh", logs.append)
+        assert installed_state(g) == "installed" and active_mode(g) == "zh"
+        for f in files:
+            p = os.path.join(g, *f["path"].split("/"))
+            assert open(p, "rb").read() == b"ZHZH" and open(p + BAK, "rb").read() == b"JPJ" and not os.path.exists(p + MOD)
+        switch_mode(g, "jp", logs.append); remove(g, logs.append)          # removing while Japanese is active keeps the originals
+        for f in files:
+            p = os.path.join(g, *f["path"].split("/"))
+            assert open(p, "rb").read() == b"JPJ" and not os.path.exists(p + MOD) and not os.path.exists(p + BAK)
+        assert installed_state(g) == "none"
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+    print("switch selftest ok")
+
+
 def _hide_console():
     """Frozen Windows build is a console program (so --cli works); hide its window when the wizard opens."""
     if sys.platform == "win32" and getattr(sys, "frozen", False):
@@ -679,8 +784,9 @@ def main():
     ap = argparse.ArgumentParser(description=APP)
     ap.add_argument("--cli", action="store_true"); ap.add_argument("--game"); ap.add_argument("--accept", action="store_true")
     ap.add_argument("--auto", action="store_true", help="代勞模式：自動找遊戲資料夾、日文包與 ffmpeg")
-    ap.add_argument("--jppack"); ap.add_argument("--ffmpeg"); ap.add_argument("action", nargs="?", choices=["install", "remove", "remove-all", "status"]); ap.add_argument("--selftest", action="store_true")
+    ap.add_argument("--jppack"); ap.add_argument("--ffmpeg"); ap.add_argument("action", nargs="?", choices=["install", "remove", "remove-all", "status", "switch-jp", "switch-zh"]); ap.add_argument("--selftest", action="store_true")
     a = ap.parse_args()
+    if a.selftest: _selftest_switch()
     if a.cli or a.game or a.action:
         a.auto = a.auto or IS_LINUX; return cli(a)
     try: import tkinter  # noqa: F401
